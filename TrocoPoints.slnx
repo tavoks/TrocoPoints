@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TrocoPoints.Api/TrocoPoints.Api.csproj" />
+    <Project Path="src/TrocoPoints.Application/TrocoPoints.Application.csproj" />
+    <Project Path="src/TrocoPoints.Domain/TrocoPoints.Domain.csproj" />
+    <Project Path="src/TrocoPoints.Infrastructure/TrocoPoints.Infrastructure.csproj" />
+    <Project Path="src/TrocoPoints.Worker/TrocoPoints.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TrocoPoints.IntegrationTests/TrocoPoints.IntegrationTests.csproj" />
+    <Project Path="tests/TrocoPoints.UnitTests/TrocoPoints.UnitTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,11 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "OracleConnectionString": "User Id=trocopoints;Password=SUA_SENHA_AQUI;Data Source=localhost:1521/XEPDB1;"
+  }
+}

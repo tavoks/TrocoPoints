@@ -1,0 +1,24 @@
+# Build results
+bin/
+obj/
+out/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# .NET
+*.dll
+*.pdb
+
+# Segredos locais (não versionar)
+src/TrocoPoints.Api/appsettings.Development.json
+
+# Docker volumes locais
+docker/init-db/*.log
+
+# Configuração local do Claude Code
+.claude/

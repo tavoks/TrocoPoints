@@ -1,0 +1,36 @@
+ALTER SESSION SET CONTAINER = XEPDB1;
+ALTER SESSION SET CURRENT_SCHEMA = trocopoints;
+
+CREATE TABLE Clientes (
+    Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    Cpf VARCHAR2(11) NOT NULL,
+    Nome VARCHAR2(200) NULL,
+    CONSTRAINT UQ_Clientes_Cpf UNIQUE (Cpf)
+);
+
+CREATE TABLE Transacoes (
+    Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ClienteId NUMBER NOT NULL,
+    Dinheiro NUMBER(10,2) NOT NULL,
+    PdvId VARCHAR2(50) NOT NULL,
+    TransacaoExternaId VARCHAR2(36) NOT NULL,
+    DataHora TIMESTAMP NOT NULL,
+    CONSTRAINT FK_Transacoes_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+    CONSTRAINT UQ_Transacoes_TransacaoExternaId UNIQUE (TransacaoExternaId)
+);
+
+CREATE TABLE ContasPontos (
+    Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ClienteId NUMBER NOT NULL,
+    SaldoAtual NUMBER NOT NULL,
+    CONSTRAINT FK_ContasPontos_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+    CONSTRAINT UQ_ContasPontos_ClienteId UNIQUE (ClienteId)
+);
+
+CREATE TABLE OutboxMessages (
+    Id VARCHAR2(36) PRIMARY KEY,
+    TipoEvento VARCHAR2(100) NOT NULL,
+    Payload CLOB NOT NULL,
+    DataCriacao TIMESTAMP NOT NULL,
+    Processada NUMBER(1) DEFAULT 0 NOT NULL
+);
