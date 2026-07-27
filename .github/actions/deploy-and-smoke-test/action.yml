@@ -1,0 +1,150 @@
+name: "Deploy TrocoPoints + smoke test"
+description: "Sobe um cluster kind efêmero, faz deploy das imagens do GHCR e valida com smoke test"
+
+inputs:
+  image-tag:
+    required: true
+  image-api:
+    required: true
+  image-worker:
+    required: true
+  github-token:
+    required: true
+  cluster-name:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Criar cluster kind
+      uses: helm/kind-action@v1
+      with:
+        cluster_name: ${{ inputs.cluster-name }}
+
+    - name: Aplicar namespace + dependências (Oracle, RabbitMQ, MongoDB, Redis, Jaeger)
+      shell: bash
+      run: |
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/ci/
+
+    # Necessário pra puxar do GHCR mesmo que o pacote seja privado por padrão
+    # na primeira publicação - sem isso os pods ficam em ImagePullBackOff.
+    - name: Criar imagePullSecret pro GHCR
+      shell: bash
+      run: |
+        kubectl create secret docker-registry ghcr-pull-secret -n trocopoints \
+          --docker-server=ghcr.io \
+          --docker-username=${{ github.actor }} \
+          --docker-password=${{ inputs.github-token }}
+
+    - name: Esperar dependências ficarem prontas
+      shell: bash
+      run: |
+        kubectl wait --for=condition=ready pod -l app=rabbitmq -n trocopoints --timeout=180s
+        kubectl wait --for=condition=ready pod -l app=mongo -n trocopoints --timeout=120s
+        kubectl wait --for=condition=ready pod -l app=redis -n trocopoints --timeout=60s
+        kubectl wait --for=condition=ready pod -l app=oracle -n trocopoints --timeout=300s
+
+    # ConfigMap/Secret específicos deste job - apontam pros Services internos
+    # do cluster (nome do Service = DNS interno do k8s), diferente dos
+    # manifests de uso local (k8s/api-configmap.yaml etc.) que usam
+    # host.docker.internal pra falar com o docker-compose do host.
+    - name: Criar config/secrets da aplicação
+      shell: bash
+      run: |
+        kubectl create configmap trocopoints-api-config -n trocopoints \
+          --from-literal=OpenTelemetry__JaegerOtlpEndpoint="http://jaeger:4317" \
+          --from-literal=MongoDb__DatabaseName="trocopoints" \
+          --from-literal=MongoDb__AuditoriaCollectionName="auditoria_transacoes" \
+          --from-literal=Redis__InstanceName="trocopoints:"
+
+        kubectl create secret generic trocopoints-api-secret -n trocopoints \
+          --from-literal=ConnectionStrings__OracleConnectionString="User Id=trocopoints;Password=TrocoPoints123;Data Source=oracle:1521/XEPDB1;" \
+          --from-literal=MongoDb__ConnectionString="mongodb://trocopoints:TrocoPoints123@mongo:27017/?authSource=admin" \
+          --from-literal=Redis__Configuration="redis:6379,password=TrocoPoints123"
+
+        kubectl create configmap trocopoints-worker-config -n trocopoints \
+          --from-literal=OpenTelemetry__JaegerOtlpEndpoint="http://jaeger:4317" \
+          --from-literal=MongoDb__DatabaseName="trocopoints" \
+          --from-literal=MongoDb__AuditoriaCollectionName="auditoria_transacoes" \
+          --from-literal=Redis__InstanceName="trocopoints:" \
+          --from-literal=RabbitMq__HostName="rabbitmq" \
+          --from-literal=RabbitMq__Port="5672" \
+          --from-literal=RabbitMq__UserName="trocopoints" \
+          --from-literal=RabbitMq__Exchange="trocopoints.transacoes" \
+          --from-literal=RabbitMq__RetryExchange="trocopoints.transacoes.retry" \
+          --from-literal=RabbitMq__DeadLetterExchange="trocopoints.transacoes.dlx" \
+          --from-literal=RabbitMq__Queue="transacao.recebida.queue" \
+          --from-literal=RabbitMq__RetryQueue="transacao.recebida.retry.queue" \
+          --from-literal=RabbitMq__DeadLetterQueue="transacao.recebida.dlq" \
+          --from-literal=RabbitMq__RoutingKey="transacao.recebida" \
+          --from-literal=RabbitMq__RetryTtlMilliseconds="30000" \
+          --from-literal=RabbitMq__MaxTentativas="5"
+
+        kubectl create secret generic trocopoints-worker-secret -n trocopoints \
+          --from-literal=ConnectionStrings__OracleConnectionString="User Id=trocopoints;Password=TrocoPoints123;Data Source=oracle:1521/XEPDB1;" \
+          --from-literal=MongoDb__ConnectionString="mongodb://trocopoints:TrocoPoints123@mongo:27017/?authSource=admin" \
+          --from-literal=Redis__Configuration="redis:6379,password=TrocoPoints123" \
+          --from-literal=RabbitMq__Password="TrocoPoints123"
+
+    # Os manifests em k8s/ apontam pra imagem local (trocopoints-api:local,
+    # imagePullPolicy: Never) porque são pra uso no Docker Desktop local. Aqui
+    # precisamos da imagem publicada no GHCR - substituímos via sed em vez de
+    # editar o arquivo original. Isso é exatamente o tipo de problema que
+    # Kustomize/Helm resolvem de forma nativa (overlays de imagem por
+    # ambiente); sed é a versão "manual" só pra manter o pipeline simples.
+    - name: Deploy da Api e do Worker (imagem do GHCR)
+      shell: bash
+      run: |
+        sed -e "s|image: trocopoints-api:local|image: ${{ inputs.image-api }}:${{ inputs.image-tag }}|" \
+            -e "s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|" \
+            k8s/api-deployment.yaml | kubectl apply -f -
+        kubectl apply -f k8s/api-service.yaml
+
+        sed -e "s|image: trocopoints-worker:local|image: ${{ inputs.image-worker }}:${{ inputs.image-tag }}|" \
+            -e "s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|" \
+            k8s/worker-publisher-deployment.yaml | kubectl apply -f -
+        sed -e "s|image: trocopoints-worker:local|image: ${{ inputs.image-worker }}:${{ inputs.image-tag }}|" \
+            -e "s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|" \
+            k8s/worker-consumer-deployment.yaml | kubectl apply -f -
+
+        for d in trocopoints-api trocopoints-worker-publisher trocopoints-worker-consumer; do
+          kubectl patch deployment "$d" -n trocopoints --type=json \
+            -p '[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
+        done
+
+    - name: Esperar Api e Worker ficarem prontos
+      shell: bash
+      run: |
+        kubectl wait --for=condition=ready pod -l app=trocopoints-api -n trocopoints --timeout=120s
+        kubectl wait --for=condition=ready pod -l app=trocopoints-worker-publisher -n trocopoints --timeout=120s
+        kubectl wait --for=condition=ready pod -l app=trocopoints-worker-consumer -n trocopoints --timeout=120s
+
+    - name: Smoke test (health + fluxo de transação ponta a ponta)
+      shell: bash
+      run: |
+        kubectl port-forward -n trocopoints svc/trocopoints-api 8080:80 &
+        sleep 5
+
+        curl -sf http://localhost:8080/health
+        curl -sf http://localhost:8080/health/ready
+
+        EXT_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
+        curl -sf -X POST http://localhost:8080/api/transacoes \
+          -H "Content-Type: application/json" \
+          -d "{\"cpf\":\"52998224725\",\"valor\":10.00,\"pdvId\":\"PDV-CI\",\"transacaoExternaId\":\"$EXT_ID\"}"
+
+        sleep 10
+        SALDO=$(curl -sf http://localhost:8080/api/pontos/52998224725)
+        echo "Saldo apos smoke test: $SALDO"
+        echo "$SALDO" | grep -q '"saldo":100'
+
+    - name: Logs em caso de falha
+      if: failure()
+      shell: bash
+      run: |
+        kubectl get pods -n trocopoints
+        kubectl describe pods -n trocopoints
+        kubectl logs -n trocopoints -l app=trocopoints-api --tail=100
+        kubectl logs -n trocopoints -l app=trocopoints-worker-publisher --tail=100
+        kubectl logs -n trocopoints -l app=trocopoints-worker-consumer --tail=100

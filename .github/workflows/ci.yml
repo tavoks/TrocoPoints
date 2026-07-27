@@ -9,6 +9,9 @@ on:
 
 env:
   DOTNET_VERSION: "10.0.x"
+  REGISTRY: ghcr.io
+  IMAGE_API: ghcr.io/${{ github.repository_owner }}/trocopoints-api
+  IMAGE_WORKER: ghcr.io/${{ github.repository_owner }}/trocopoints-worker
 
 jobs:
   test:
@@ -33,120 +36,108 @@ jobs:
       - name: Test (unit + integration)
         run: dotnet test TrocoPoints.slnx --no-build --configuration Release --logger "console;verbosity=normal"
 
-  deploy-smoke:
-    name: Deploy k8s efêmero (kind) + smoke test
+  # Constrói UMA VEZ e publica no GHCR (registry de imagens do GitHub, grátis
+  # pra repositórios públicos). Esse é o artefato que staging e produção vão
+  # reusar - não rebuilda a imagem em cada ambiente, promove a mesma imagem
+  # testada adiante. Só roda em push de verdade (não em PR - PR não deveria
+  # poder publicar imagem).
+  build-and-push:
+    name: Build + Push imagens (GHCR)
     needs: test
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build imagem da Api
-        run: docker build -f src/TrocoPoints.Api/Dockerfile -t trocopoints-api:local .
+      - name: Definir tag da imagem
+        id: vars
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - name: Build imagem do Worker
-        run: docker build -f src/TrocoPoints.Worker/Dockerfile -t trocopoints-worker:local .
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Criar cluster kind
-        uses: helm/kind-action@v1
+      - name: Login no GHCR
+        uses: docker/login-action@v3
         with:
-          cluster_name: trocopoints-ci
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Carregar imagens no kind
+      - name: Build + push imagem da Api
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: src/TrocoPoints.Api/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_API }}:${{ steps.vars.outputs.tag }}
+
+      - name: Build + push imagem do Worker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: src/TrocoPoints.Worker/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_WORKER }}:${{ steps.vars.outputs.tag }}
+
+      # Numa tag v*, cria um "apelido" (mesmo digest, tag amigável) sem
+      # rebuildar - é a mesma imagem já validada pelo sha, só com um nome
+      # melhor pra promoção/rollback manual (docker pull .../trocopoints-api:v0.6.0).
+      - name: Criar tag semver como alias (só em push de tag)
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          kind load docker-image trocopoints-api:local --name trocopoints-ci
-          kind load docker-image trocopoints-worker:local --name trocopoints-ci
+          docker buildx imagetools create -t ${{ env.IMAGE_API }}:${{ github.ref_name }} ${{ env.IMAGE_API }}:${{ steps.vars.outputs.tag }}
+          docker buildx imagetools create -t ${{ env.IMAGE_WORKER }}:${{ github.ref_name }} ${{ env.IMAGE_WORKER }}:${{ steps.vars.outputs.tag }}
 
-      - name: Aplicar namespace + dependências (Oracle, RabbitMQ, MongoDB, Redis, Jaeger)
-        run: |
-          kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/ci/
+  # "Staging": dispara em todo push pra master. Ambiente k8s efêmero (kind)
+  # dentro do runner - não é staging persistente de verdade (isso pediria um
+  # cluster real na nuvem), mas simula a promoção: puxa a imagem que acabou
+  # de ser publicada no GHCR (não builda de novo) e valida com smoke test.
+  deploy-staging:
+    name: Deploy staging (kind) + smoke test
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-and-smoke-test
+        with:
+          image-tag: ${{ needs.build-and-push.outputs.tag }}
+          image-api: ${{ env.IMAGE_API }}
+          image-worker: ${{ env.IMAGE_WORKER }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cluster-name: trocopoints-staging
 
-      - name: Esperar dependências ficarem prontas
-        run: |
-          kubectl wait --for=condition=ready pod -l app=rabbitmq -n trocopoints --timeout=180s
-          kubectl wait --for=condition=ready pod -l app=mongo -n trocopoints --timeout=120s
-          kubectl wait --for=condition=ready pod -l app=redis -n trocopoints --timeout=60s
-          kubectl wait --for=condition=ready pod -l app=oracle -n trocopoints --timeout=300s
-
-      # ConfigMap/Secret específicos do CI - apontam pros Services internos do
-      # cluster (nome do Service = DNS interno do k8s), diferente dos manifests
-      # de uso local (k8s/api-configmap.yaml etc.) que usam host.docker.internal
-      # pra falar com o docker-compose do host. Gerados aqui, não versionados,
-      # porque só fazem sentido dentro deste cluster efêmero do CI.
-      - name: Criar config/secrets da aplicação (aponta pros Services do cluster)
-        run: |
-          kubectl create configmap trocopoints-api-config -n trocopoints \
-            --from-literal=OpenTelemetry__JaegerOtlpEndpoint="http://jaeger:4317" \
-            --from-literal=MongoDb__DatabaseName="trocopoints" \
-            --from-literal=MongoDb__AuditoriaCollectionName="auditoria_transacoes" \
-            --from-literal=Redis__InstanceName="trocopoints:"
-
-          kubectl create secret generic trocopoints-api-secret -n trocopoints \
-            --from-literal=ConnectionStrings__OracleConnectionString="User Id=trocopoints;Password=TrocoPoints123;Data Source=oracle:1521/XEPDB1;" \
-            --from-literal=MongoDb__ConnectionString="mongodb://trocopoints:TrocoPoints123@mongo:27017/?authSource=admin" \
-            --from-literal=Redis__Configuration="redis:6379,password=TrocoPoints123"
-
-          kubectl create configmap trocopoints-worker-config -n trocopoints \
-            --from-literal=OpenTelemetry__JaegerOtlpEndpoint="http://jaeger:4317" \
-            --from-literal=MongoDb__DatabaseName="trocopoints" \
-            --from-literal=MongoDb__AuditoriaCollectionName="auditoria_transacoes" \
-            --from-literal=Redis__InstanceName="trocopoints:" \
-            --from-literal=RabbitMq__HostName="rabbitmq" \
-            --from-literal=RabbitMq__Port="5672" \
-            --from-literal=RabbitMq__UserName="trocopoints" \
-            --from-literal=RabbitMq__Exchange="trocopoints.transacoes" \
-            --from-literal=RabbitMq__RetryExchange="trocopoints.transacoes.retry" \
-            --from-literal=RabbitMq__DeadLetterExchange="trocopoints.transacoes.dlx" \
-            --from-literal=RabbitMq__Queue="transacao.recebida.queue" \
-            --from-literal=RabbitMq__RetryQueue="transacao.recebida.retry.queue" \
-            --from-literal=RabbitMq__DeadLetterQueue="transacao.recebida.dlq" \
-            --from-literal=RabbitMq__RoutingKey="transacao.recebida" \
-            --from-literal=RabbitMq__RetryTtlMilliseconds="30000" \
-            --from-literal=RabbitMq__MaxTentativas="5"
-
-          kubectl create secret generic trocopoints-worker-secret -n trocopoints \
-            --from-literal=ConnectionStrings__OracleConnectionString="User Id=trocopoints;Password=TrocoPoints123;Data Source=oracle:1521/XEPDB1;" \
-            --from-literal=MongoDb__ConnectionString="mongodb://trocopoints:TrocoPoints123@mongo:27017/?authSource=admin" \
-            --from-literal=Redis__Configuration="redis:6379,password=TrocoPoints123" \
-            --from-literal=RabbitMq__Password="TrocoPoints123"
-
-      - name: Deploy da Api e do Worker
-        run: |
-          kubectl apply -f k8s/api-deployment.yaml
-          kubectl apply -f k8s/api-service.yaml
-          kubectl apply -f k8s/worker-publisher-deployment.yaml
-          kubectl apply -f k8s/worker-consumer-deployment.yaml
-
-      - name: Esperar Api e Worker ficarem prontos
-        run: |
-          kubectl wait --for=condition=ready pod -l app=trocopoints-api -n trocopoints --timeout=120s
-          kubectl wait --for=condition=ready pod -l app=trocopoints-worker-publisher -n trocopoints --timeout=120s
-          kubectl wait --for=condition=ready pod -l app=trocopoints-worker-consumer -n trocopoints --timeout=120s
-
-      - name: Smoke test (health + fluxo de transação ponta a ponta)
-        run: |
-          kubectl port-forward -n trocopoints svc/trocopoints-api 8080:80 &
-          sleep 5
-
-          curl -sf http://localhost:8080/health
-          curl -sf http://localhost:8080/health/ready
-
-          EXT_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
-          curl -sf -X POST http://localhost:8080/api/transacoes \
-            -H "Content-Type: application/json" \
-            -d "{\"cpf\":\"52998224725\",\"valor\":10.00,\"pdvId\":\"PDV-CI\",\"transacaoExternaId\":\"$EXT_ID\"}"
-
-          sleep 10
-          SALDO=$(curl -sf http://localhost:8080/api/pontos/52998224725)
-          echo "Saldo apos smoke test: $SALDO"
-          echo "$SALDO" | grep -q '"saldo":100'
-
-      - name: Logs em caso de falha
-        if: failure()
-        run: |
-          kubectl get pods -n trocopoints
-          kubectl describe pods -n trocopoints
-          kubectl logs -n trocopoints -l app=trocopoints-api --tail=100
-          kubectl logs -n trocopoints -l app=trocopoints-worker-publisher --tail=100
-          kubectl logs -n trocopoints -l app=trocopoints-worker-consumer --tail=100
+  # "Produção": só dispara em tag v*, e só depois do staging passar - ou
+  # seja, a MESMA imagem validada em staging é promovida, não uma nova
+  # build. O ambiente "production" no GitHub precisa ter um "required
+  # reviewer" configurado manualmente em Settings → Environments →
+  # production (não dá pra configurar isso só pelo workflow.yml) - é o
+  # gate manual que diferencia Continuous Delivery de Continuous
+  # Deployment.
+  deploy-production:
+    name: Deploy production (kind) + smoke test
+    needs: [build-and-push, deploy-staging]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-and-smoke-test
+        with:
+          image-tag: ${{ needs.build-and-push.outputs.tag }}
+          image-api: ${{ env.IMAGE_API }}
+          image-worker: ${{ env.IMAGE_WORKER }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cluster-name: trocopoints-production
