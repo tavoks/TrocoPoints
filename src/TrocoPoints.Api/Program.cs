@@ -33,6 +33,13 @@ builder.Services.AddScoped<IContaPontosRepository, ContaPontosRepository>();
 builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDb"));
 builder.Services.AddSingleton<IAuditoriaRepository, MongoAuditoriaRepository>();
 
+// Cache distribuído (Redis)
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration["Redis:Configuration"];
+    options.InstanceName = builder.Configuration["Redis:InstanceName"];
+});
+
 // Application (casos de uso)
 builder.Services.AddScoped<ReceberTransacaoAppService>();
 builder.Services.AddScoped<ConsultarSaldoAppService>();

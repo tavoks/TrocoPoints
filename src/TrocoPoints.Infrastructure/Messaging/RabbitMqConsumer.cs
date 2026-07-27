@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -69,6 +70,7 @@ namespace TrocoPoints.Infrastructure.Messaging
             var contaPontosRepository = scope.ServiceProvider.GetRequiredService<IContaPontosRepository>();
             var pontosLedgerRepository = scope.ServiceProvider.GetRequiredService<IPontosLedgerRepository>();
             var auditoriaRepository = scope.ServiceProvider.GetRequiredService<IAuditoriaRepository>();
+            var cache = scope.ServiceProvider.GetRequiredService<IDistributedCache>();
 
             var contextoPai = Propagators.DefaultTextMapPropagator.Extract(
                 default,
@@ -123,6 +125,10 @@ namespace TrocoPoints.Infrastructure.Messaging
                     pontosCreditados,
                     evento.DataHora);
                 await auditoriaRepository.AdicionarAsync(auditoria, stoppingToken);
+
+                // Invalida o cache do saldo desse cliente - a próxima consulta busca o valor
+                // atualizado no Oracle, em vez de continuar servindo o saldo antigo até o TTL expirar.
+                await cache.RemoveAsync($"saldo:cliente:{evento.ClienteId}", stoppingToken);
 
                 await channel.BasicAckAsync(ea.DeliveryTag, multiple: false, cancellationToken: stoppingToken);
             }

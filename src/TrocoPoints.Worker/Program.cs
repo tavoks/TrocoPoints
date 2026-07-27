@@ -31,6 +31,13 @@ builder.Services.AddScoped<IPontosLedgerRepository, PontosLedgerRepository>();
 builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDb"));
 builder.Services.AddSingleton<IAuditoriaRepository, MongoAuditoriaRepository>();
 
+// Cache distribuído (Redis) - o Worker invalida o cache ao creditar pontos.
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration["Redis:Configuration"];
+    options.InstanceName = builder.Configuration["Redis:InstanceName"];
+});
+
 // Mensageria (RabbitMQ)
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.AddSingleton<RabbitMqTopologyInitializer>();

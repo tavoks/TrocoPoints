@@ -15,5 +15,9 @@
   },
   "OpenTelemetry": {
     "JaegerOtlpEndpoint": "http://localhost:4317"
+  },
+  "Redis": {
+    "Configuration": "localhost:6379,password=SUA_SENHA_AQUI",
+    "InstanceName": "trocopoints:"
   }
 }
