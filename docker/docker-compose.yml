@@ -50,6 +50,16 @@ services:
       timeout: 5s
       retries: 10
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: trocopoints-jaeger
+    ports:
+      - "16686:16686" # painel web (http://localhost:16686)
+      - "4317:4317"   # OTLP gRPC (usado pela aplicação pra enviar traces)
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
 volumes:
   oracle-data:
   rabbitmq-data:

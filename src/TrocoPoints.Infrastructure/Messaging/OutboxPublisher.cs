@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Context.Propagation;
 using RabbitMQ.Client;
 using TrocoPoints.Application.Dtos.TransacaoOutbox;
 using TrocoPoints.Application.Interfaces;
@@ -58,7 +61,17 @@ namespace TrocoPoints.Infrastructure.Messaging
                         try
                         {
                             var corpo = Encoding.UTF8.GetBytes(mensagem.Payload);
-                            var propriedades = new BasicProperties { Persistent = true };
+                            var propriedades = new BasicProperties { Persistent = true, Headers = new Dictionary<string, object?>() };
+
+                            using var activity = TrocoPointsActivitySource.Instance.StartActivity("publicar-mensagem-outbox", ActivityKind.Producer);
+
+                            if (activity is not null)
+                            {
+                                Propagators.DefaultTextMapPropagator.Inject(
+                                    new PropagationContext(activity.Context, Baggage.Current),
+                                    propriedades.Headers,
+                                    (headers, key, value) => headers![key] = value);
+                            }
 
                             await channel.BasicPublishAsync(
                                 exchange: _options.Value.Exchange,

@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Context.Propagation;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using TrocoPoints.Application.Dtos.Eventos;
@@ -67,6 +69,18 @@ namespace TrocoPoints.Infrastructure.Messaging
             var contaPontosRepository = scope.ServiceProvider.GetRequiredService<IContaPontosRepository>();
             var pontosLedgerRepository = scope.ServiceProvider.GetRequiredService<IPontosLedgerRepository>();
             var auditoriaRepository = scope.ServiceProvider.GetRequiredService<IAuditoriaRepository>();
+
+            var contextoPai = Propagators.DefaultTextMapPropagator.Extract(
+                default,
+                ea.BasicProperties.Headers,
+                (headers, key) => headers!.TryGetValue(key, out var valor) && valor is byte[] bytes
+                    ? new[] { Encoding.UTF8.GetString(bytes) }
+                    : Enumerable.Empty<string>());
+
+            using var activity = TrocoPointsActivitySource.Instance.StartActivity(
+                "processar-mensagem-outbox",
+                ActivityKind.Consumer,
+                contextoPai.ActivityContext);
 
             try
             {

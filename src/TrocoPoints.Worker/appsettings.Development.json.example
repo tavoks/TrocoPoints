@@ -27,5 +27,8 @@
     "ConnectionString": "mongodb://trocopoints:SUA_SENHA_AQUI@localhost:27017/?authSource=admin",
     "DatabaseName": "trocopoints",
     "AuditoriaCollectionName": "auditoria_transacoes"
+  },
+  "OpenTelemetry": {
+    "JaegerOtlpEndpoint": "http://localhost:4317"
   }
 }
