@@ -22,5 +22,10 @@
     "RoutingKey": "transacao.recebida",
     "RetryTtlMilliseconds": 30000,
     "MaxTentativas": 5
+  },
+  "MongoDb": {
+    "ConnectionString": "mongodb://trocopoints:SUA_SENHA_AQUI@localhost:27017/?authSource=admin",
+    "DatabaseName": "trocopoints",
+    "AuditoriaCollectionName": "auditoria_transacoes"
   }
 }

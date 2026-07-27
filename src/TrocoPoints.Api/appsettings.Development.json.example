@@ -7,5 +7,10 @@
   },
   "ConnectionStrings": {
     "OracleConnectionString": "User Id=trocopoints;Password=SUA_SENHA_AQUI;Data Source=localhost:1521/XEPDB1;"
+  },
+  "MongoDb": {
+    "ConnectionString": "mongodb://trocopoints:SUA_SENHA_AQUI@localhost:27017/?authSource=admin",
+    "DatabaseName": "trocopoints",
+    "AuditoriaCollectionName": "auditoria_transacoes"
   }
 }

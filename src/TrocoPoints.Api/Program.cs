@@ -1,5 +1,6 @@
 using TrocoPoints.Application.Interfaces;
 using TrocoPoints.Application.Services;
+using TrocoPoints.Infrastructure.Mongo;
 using TrocoPoints.Infrastructure.Persistence;
 using TrocoPoints.Infrastructure.Repositories;
 
@@ -15,9 +16,14 @@ builder.Services.AddScoped<ITransacaoRepository, TransacaoRepository>();
 builder.Services.AddScoped<IOutboxRepository, OutboxRepository>();
 builder.Services.AddScoped<IContaPontosRepository, ContaPontosRepository>();
 
+// MongoDB (auditoria) - leitura, pelo endpoint de consulta.
+builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDb"));
+builder.Services.AddSingleton<IAuditoriaRepository, MongoAuditoriaRepository>();
+
 // Application (casos de uso)
 builder.Services.AddScoped<ReceberTransacaoAppService>();
 builder.Services.AddScoped<ConsultarSaldoAppService>();
+builder.Services.AddScoped<ConsultarAuditoriaAppService>();
 
 var app = builder.Build();
 

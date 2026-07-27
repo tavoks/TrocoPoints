@@ -1,5 +1,6 @@
 using TrocoPoints.Application.Interfaces;
 using TrocoPoints.Infrastructure.Messaging;
+using TrocoPoints.Infrastructure.Mongo;
 using TrocoPoints.Infrastructure.Persistence;
 using TrocoPoints.Infrastructure.Repositories;
 
@@ -11,6 +12,11 @@ builder.Services.AddScoped<ITransacaoRepository, TransacaoRepository>();
 builder.Services.AddScoped<IOutboxRepository, OutboxRepository>();
 builder.Services.AddScoped<IContaPontosRepository, ContaPontosRepository>();
 builder.Services.AddScoped<IPontosLedgerRepository, PontosLedgerRepository>();
+
+// MongoDB (auditoria) - MongoClient já gerencia um pool de conexões internamente,
+// então o repositório pode ser Singleton (diferente do Oracle/Dapper).
+builder.Services.Configure<MongoDbOptions>(builder.Configuration.GetSection("MongoDb"));
+builder.Services.AddSingleton<IAuditoriaRepository, MongoAuditoriaRepository>();
 
 // Mensageria (RabbitMQ)
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));

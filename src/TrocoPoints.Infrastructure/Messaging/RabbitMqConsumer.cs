@@ -66,6 +66,7 @@ namespace TrocoPoints.Infrastructure.Messaging
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             var contaPontosRepository = scope.ServiceProvider.GetRequiredService<IContaPontosRepository>();
             var pontosLedgerRepository = scope.ServiceProvider.GetRequiredService<IPontosLedgerRepository>();
+            var auditoriaRepository = scope.ServiceProvider.GetRequiredService<IAuditoriaRepository>();
 
             try
             {
@@ -97,6 +98,18 @@ namespace TrocoPoints.Infrastructure.Messaging
                 await pontosLedgerRepository.AdicionarAsync(lancamento, stoppingToken);
 
                 await unitOfWork.CommitAsync();
+
+                // Auditoria no MongoDB - fora da transação Oracle (banco separado, dual-write aceito
+                // como simplificação de MVP; ver discussão sobre Outbox Pattern também para o Mongo).
+                var auditoria = AuditoriaTransacao.Criar(
+                    evento.TransacaoExternaId,
+                    evento.ClienteId,
+                    evento.PdvId,
+                    evento.Valor,
+                    pontosCreditados,
+                    evento.DataHora);
+                await auditoriaRepository.AdicionarAsync(auditoria, stoppingToken);
+
                 await channel.BasicAckAsync(ea.DeliveryTag, multiple: false, cancellationToken: stoppingToken);
             }
             catch (Exception ex)
