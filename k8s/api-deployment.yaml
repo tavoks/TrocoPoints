@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trocopoints-api
+  namespace: trocopoints
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: trocopoints-api
+  template:
+    metadata:
+      labels:
+        app: trocopoints-api
+    spec:
+      containers:
+        - name: api
+          image: trocopoints-api:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: trocopoints-api-config
+            - secretRef:
+                name: trocopoints-api-secret
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10

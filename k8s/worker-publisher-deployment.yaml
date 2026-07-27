@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trocopoints-worker-publisher
+  namespace: trocopoints
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trocopoints-worker-publisher
+  template:
+    metadata:
+      labels:
+        app: trocopoints-worker-publisher
+    spec:
+      containers:
+        - name: worker
+          image: trocopoints-worker:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: WORKER_ROLE
+              value: "publisher"
+          envFrom:
+            - configMapRef:
+                name: trocopoints-worker-config
+            - secretRef:
+                name: trocopoints-worker-secret
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10

@@ -41,8 +41,19 @@ builder.Services.AddStackExchangeRedisCache(options =>
 // Mensageria (RabbitMQ)
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
 builder.Services.AddSingleton<RabbitMqTopologyInitializer>();
-builder.Services.AddHostedService<OutboxPublisher>();
-builder.Services.AddHostedService<RabbitMqConsumer>();
+
+// WORKER_ROLE decide qual BackgroundService este processo hospeda:
+// "publisher" | "consumer" | ausente/qualquer outro valor = os dois (uso local via docker-compose).
+// Existe pra permitir escalar o consumidor RabbitMQ (competing consumers) sem multiplicar o
+// OutboxPublisher, que não é seguro para múltiplas réplicas concorrentes (ver OutboxRepository -
+// BuscarPendentesAsync não usa FOR UPDATE SKIP LOCKED).
+var workerRole = builder.Configuration["WORKER_ROLE"];
+
+if (workerRole != "consumer")
+    builder.Services.AddHostedService<OutboxPublisher>();
+
+if (workerRole != "publisher")
+    builder.Services.AddHostedService<RabbitMqConsumer>();
 
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trocopoints-worker-config
+  namespace: trocopoints
+data:
+  OpenTelemetry__JaegerOtlpEndpoint: "http://host.docker.internal:4317"
+  MongoDb__DatabaseName: "trocopoints"
+  MongoDb__AuditoriaCollectionName: "auditoria_transacoes"
+  Redis__InstanceName: "trocopoints:"
+  RabbitMq__HostName: "host.docker.internal"
+  RabbitMq__Port: "5672"
+  RabbitMq__UserName: "trocopoints"
+  RabbitMq__Exchange: "trocopoints.transacoes"
+  RabbitMq__RetryExchange: "trocopoints.transacoes.retry"
+  RabbitMq__DeadLetterExchange: "trocopoints.transacoes.dlx"
+  RabbitMq__Queue: "transacao.recebida.queue"
+  RabbitMq__RetryQueue: "transacao.recebida.retry.queue"
+  RabbitMq__DeadLetterQueue: "transacao.recebida.dlq"
+  RabbitMq__RoutingKey: "transacao.recebida"
+  RabbitMq__RetryTtlMilliseconds: "30000"
+  RabbitMq__MaxTentativas: "5"

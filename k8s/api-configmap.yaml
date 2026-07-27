@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trocopoints-api-config
+  namespace: trocopoints
+data:
+  OpenTelemetry__JaegerOtlpEndpoint: "http://host.docker.internal:4317"
+  MongoDb__DatabaseName: "trocopoints"
+  MongoDb__AuditoriaCollectionName: "auditoria_transacoes"
+  Redis__InstanceName: "trocopoints:"

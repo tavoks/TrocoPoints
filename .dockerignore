@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/*.user
+docker/
+k8s/
+tests/
+.git/
+.gitignore
+*.md
