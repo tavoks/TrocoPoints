@@ -23,7 +23,7 @@ namespace TrocoPoints.Domain.Models
         public static ContaPontos Reconstituir(int id, int clienteId, int saldoAtual)
             => new ContaPontos(id, clienteId, saldoAtual);
 
-        public void CreditarPontos(Dinheiro valorTransacao)
+        public int CreditarPontos(Dinheiro valorTransacao)
         {
             var pontos = (int)(valorTransacao.Valor * PontosPorReal);
 
@@ -31,6 +31,7 @@ namespace TrocoPoints.Domain.Models
                 throw new InvalidOperationException("O valor da transação não gerou pontos suficientes para crédito.");
 
             SaldoAtual += pontos;
+            return pontos;
         }
     }
 }

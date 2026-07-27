@@ -1,0 +1,26 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }
+  },
+  "ConnectionStrings": {
+    "OracleConnectionString": "User Id=trocopoints;Password=SUA_SENHA_AQUI;Data Source=localhost:1521/XEPDB1;"
+  },
+  "RabbitMq": {
+    "HostName": "localhost",
+    "Port": 5672,
+    "UserName": "trocopoints",
+    "Password": "SUA_SENHA_AQUI",
+    "Exchange": "trocopoints.transacoes",
+    "RetryExchange": "trocopoints.transacoes.retry",
+    "DeadLetterExchange": "trocopoints.transacoes.dlx",
+    "Queue": "transacao.recebida.queue",
+    "RetryQueue": "transacao.recebida.retry.queue",
+    "DeadLetterQueue": "transacao.recebida.dlq",
+    "RoutingKey": "transacao.recebida",
+    "RetryTtlMilliseconds": 30000,
+    "MaxTentativas": 5
+  }
+}

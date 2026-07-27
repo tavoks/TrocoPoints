@@ -17,5 +17,23 @@ services:
       timeout: 5s
       retries: 15
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: trocopoints-rabbitmq
+    ports:
+      - "5672:5672"   # protocolo AMQP (usado pela aplicação)
+      - "15672:15672" # painel de administração (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-trocopoints}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-TrocoPoints123}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   oracle-data:
+  rabbitmq-data:

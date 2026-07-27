@@ -1,4 +1,4 @@
-﻿namespace TrocoPoints.Application.Dtos.TransacaoOutbox
+namespace TrocoPoints.Application.Dtos.TransacaoOutbox
 {
     public class TransacaoOutboxDTO
     {
@@ -22,6 +22,15 @@
             Processada = false;
         }
 
+        private TransacaoOutboxDTO(Guid id, TipoEventoOutboxEnum tipoEvento, string payload, DateTime dataCriacao, bool processada)
+        {
+            Id = id;
+            TipoEvento = tipoEvento;
+            Payload = payload;
+            DataCriacao = dataCriacao;
+            Processada = processada;
+        }
+
         public void MarcarComoProcessada()
         {
             Processada = true;
@@ -30,6 +39,14 @@
         private static bool ValidarTransacao(string payload)
         {
             return !string.IsNullOrEmpty(payload);
+        }
+
+        public static TransacaoOutboxDTO Reconstituir(Guid id, TipoEventoOutboxEnum tipoEvento, string payload, DateTime dataCriacao, bool processada)
+        {
+            if (id == Guid.Empty)
+                throw new ArgumentException("Id vazio.");
+
+            return new TransacaoOutboxDTO(id, tipoEvento, payload, dataCriacao, processada);
         }
     }
 }

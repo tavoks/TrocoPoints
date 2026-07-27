@@ -1,0 +1,12 @@
+ALTER SESSION SET CONTAINER = XEPDB1;
+ALTER SESSION SET CURRENT_SCHEMA = trocopoints;
+
+CREATE TABLE PontosLedger (
+    Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ClienteId NUMBER NOT NULL,
+    TransacaoExternaId VARCHAR2(36) NOT NULL,
+    Pontos NUMBER NOT NULL,
+    DataCredito TIMESTAMP NOT NULL,
+    CONSTRAINT FK_PontosLedger_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+    CONSTRAINT UQ_PontosLedger_TransacaoExternaId UNIQUE (TransacaoExternaId)
+);

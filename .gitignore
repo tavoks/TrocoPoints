@@ -16,6 +16,7 @@ out/
 
 # Segredos locais (não versionar)
 src/TrocoPoints.Api/appsettings.Development.json
+src/TrocoPoints.Worker/appsettings.Development.json
 
 # Docker volumes locais
 docker/init-db/*.log
