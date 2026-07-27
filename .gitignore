@@ -23,3 +23,4 @@ docker/init-db/*.log
 
 # Configuração local do Claude Code
 .claude/
+PROGRESS.md
