@@ -1,0 +1,118 @@
+# Dependências usadas SÓ pelo job de deploy-smoke do CI (cluster kind efêmero
+# dentro do runner). Espelham o docker-compose.yml, mas como Deployments/
+# Services dentro do próprio cluster - no CI não existe host.docker.internal
+# nem um docker-compose persistente por fora, então tudo precisa estar dentro.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oracle-init-scripts
+  namespace: trocopoints
+data:
+  01_create_tables.sql: |
+    ALTER SESSION SET CONTAINER = XEPDB1;
+    ALTER SESSION SET CURRENT_SCHEMA = trocopoints;
+
+    CREATE TABLE Clientes (
+        Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        Cpf VARCHAR2(11) NOT NULL,
+        Nome VARCHAR2(200) NULL,
+        CONSTRAINT UQ_Clientes_Cpf UNIQUE (Cpf)
+    );
+
+    CREATE TABLE Transacoes (
+        Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        ClienteId NUMBER NOT NULL,
+        Dinheiro NUMBER(10,2) NOT NULL,
+        PdvId VARCHAR2(50) NOT NULL,
+        TransacaoExternaId VARCHAR2(36) NOT NULL,
+        DataHora TIMESTAMP NOT NULL,
+        CONSTRAINT FK_Transacoes_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+        CONSTRAINT UQ_Transacoes_TransacaoExternaId UNIQUE (TransacaoExternaId)
+    );
+
+    CREATE TABLE ContasPontos (
+        Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        ClienteId NUMBER NOT NULL,
+        SaldoAtual NUMBER NOT NULL,
+        CONSTRAINT FK_ContasPontos_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+        CONSTRAINT UQ_ContasPontos_ClienteId UNIQUE (ClienteId)
+    );
+
+    CREATE TABLE OutboxMessages (
+        Id VARCHAR2(36) PRIMARY KEY,
+        TipoEvento VARCHAR2(100) NOT NULL,
+        Payload CLOB NOT NULL,
+        DataCriacao TIMESTAMP NOT NULL,
+        Processada NUMBER(1) DEFAULT 0 NOT NULL
+    );
+  02_add_pontos_ledger.sql: |
+    ALTER SESSION SET CONTAINER = XEPDB1;
+    ALTER SESSION SET CURRENT_SCHEMA = trocopoints;
+
+    CREATE TABLE PontosLedger (
+        Id NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        ClienteId NUMBER NOT NULL,
+        TransacaoExternaId VARCHAR2(36) NOT NULL,
+        Pontos NUMBER NOT NULL,
+        DataCredito TIMESTAMP NOT NULL,
+        CONSTRAINT FK_PontosLedger_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id),
+        CONSTRAINT UQ_PontosLedger_TransacaoExternaId UNIQUE (TransacaoExternaId)
+    );
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oracle
+  namespace: trocopoints
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oracle
+  template:
+    metadata:
+      labels:
+        app: oracle
+    spec:
+      containers:
+        - name: oracle
+          image: gvenzl/oracle-xe:21-slim
+          ports:
+            - containerPort: 1521
+          env:
+            - name: ORACLE_PASSWORD
+              value: "TrocoPoints123"
+            - name: APP_USER
+              value: "trocopoints"
+            - name: APP_USER_PASSWORD
+              value: "TrocoPoints123"
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /container-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["healthcheck.sh"]
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command: ["healthcheck.sh"]
+            initialDelaySeconds: 90
+            periodSeconds: 30
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: oracle-init-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oracle
+  namespace: trocopoints
+spec:
+  selector:
+    app: oracle
+  ports:
+    - port: 1521
+      targetPort: 1521
